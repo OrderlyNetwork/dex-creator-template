@@ -3,6 +3,7 @@ import { OrderlyAppProvider } from "@orderly.network/react-app";
 import type { NetworkId } from "@orderly.network/types";
 import { DemoGraduationChecker } from "@/components/DemoGraduationChecker";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { getDexPlugins } from "@/plugins/loader";
 import { useOrderlyConfig } from "@/utils/config";
 import {
   CustomConfigStore,
@@ -143,6 +144,11 @@ const OrderlyProvider = (props: { children: ReactNode }) => {
 
   const dataAdapter = createSymbolDataAdapter();
 
+  // Build-time injected marketplace plugins (app/plugins/generated.ts) with
+  // public per-DEX options from VITE_DEX_PLUGINS. Memoized so provider identity
+  // is stable across renders.
+  const dexPlugins = useMemo(() => getDexPlugins(), []);
+
   const onChainChanged = useCallback(
     (_chainId: number, { isTestnet }: { isTestnet: boolean }) => {
       if (deploymentEnv !== "prod") return;
@@ -172,6 +178,7 @@ const OrderlyProvider = (props: { children: ReactNode }) => {
       {...(chainFilter && ({ chainFilter } as any))}
       defaultChain={defaultChain}
       dataAdapter={dataAdapter}
+      {...(dexPlugins.length > 0 ? { plugins: dexPlugins } : {})}
       restrictedInfo={{
         customRestrictedRegions: getRuntimeConfigArray(
           "VITE_RESTRICTED_REGIONS",

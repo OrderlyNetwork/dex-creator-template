@@ -1,10 +1,10 @@
-import { defineConfig, Plugin } from "vite";
 import react from "@vitejs/plugin-react";
-import tsconfigPaths from "vite-tsconfig-paths";
-import { cjsInterop } from "vite-plugin-cjs-interop";
-import { nodePolyfills } from "vite-plugin-node-polyfills";
 import fs from "fs";
 import path from "path";
+import { defineConfig, Plugin } from "vite";
+import { cjsInterop } from "vite-plugin-cjs-interop";
+import { nodePolyfills } from "vite-plugin-node-polyfills";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 function loadConfigTitle(): string {
   try {
@@ -61,6 +61,28 @@ export default defineConfig(() => {
     ],
     build: {
       outDir: "build/client",
+    },
+    resolve: {
+      dedupe: [
+        "react",
+        "react-dom",
+        "@orderly.network/core",
+        "@orderly.network/hooks",
+        "@orderly.network/types",
+        "@orderly.network/ui",
+        "@orderly.network/ui-transfer",
+        "@orderly.network/react-app",
+        "@orderly.network/plugin-core",
+      ],
+      alias: [
+        {
+          find: /^@orderly\.network\/(.*)$/,
+          replacement: path.resolve(
+            __dirname,
+            "node_modules/@orderly.network/$1",
+          ),
+        },
+      ],
     },
     optimizeDeps: {
       include: ["react", "react-dom", "react-router-dom"],
