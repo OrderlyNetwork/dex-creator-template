@@ -65,8 +65,13 @@ async function initializeGA4(
   config: Extract<AnalyticsConfigV1, { provider: "ga4" }>,
 ) {
   window.dataLayer = window.dataLayer || [];
-  window.gtag = (...args: unknown[]) => {
-    window.dataLayer?.push(args);
+  window.gtag = function () {
+    // gtag.js only processes dataLayer commands pushed as arguments objects;
+    // pushing a plain array makes every command (js/config/event) silently ignored.
+    window.dataLayer?.push(
+      // eslint-disable-next-line prefer-rest-params -- gtag.js requires the arguments object
+      arguments,
+    );
   };
 
   const script = document.createElement("script");

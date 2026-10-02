@@ -88,6 +88,21 @@ describe("analytics runtime", () => {
     );
   });
 
+  it("pushes gtag commands as arguments objects that gtag.js can process", () => {
+    initializeAnalytics(ga4Config);
+
+    expect(window.dataLayer).toHaveLength(2);
+    for (const entry of window.dataLayer ?? []) {
+      // gtag.js silently ignores commands pushed as plain arrays
+      expect(Array.isArray(entry)).toBe(false);
+      expect(Object.prototype.toString.call(entry)).toBe("[object Arguments]");
+    }
+
+    window.gtag?.("event", "test_event");
+    expect(window.dataLayer).toHaveLength(3);
+    expect(Array.isArray(window.dataLayer?.[2])).toBe(false);
+  });
+
   it("initializes supported Firebase Analytics with a named app", async () => {
     const result = await initializeAnalytics({
       version: 1,
