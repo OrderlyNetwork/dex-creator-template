@@ -4,6 +4,7 @@ import { HelmetProvider } from "react-helmet-async";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { initializeDexPlugins } from "./plugins/loader";
 import { initializeAnalyticsFromRuntimeConfig } from "./utils/analytics";
 import { withBasePath } from "./utils/base-path";
 import "./styles/index.css";
@@ -122,8 +123,11 @@ const router = createBrowserRouter(
   { basename: basePath },
 );
 
-loadRuntimeConfig().then(() => {
+loadRuntimeConfig().then(async () => {
   void initializeAnalyticsFromRuntimeConfig();
+  // Runtime marketplace plugins must be registered before the provider mounts,
+  // so `getDexPlugins()` returns the complete list.
+  await initializeDexPlugins();
 
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
