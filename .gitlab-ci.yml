@@ -93,24 +93,42 @@ variables:
 
 release_prod:
   extends: .release
+  resource_group: app_release_prod
+  environment:
+    name: app_release_prod
   variables:
     ENV: prod
     R2_BUCKET: $R2_BUCKET_PROD
   rules:
+    # A pipeline started by the dex-creator API's build trigger carries
+    # DEX_PREFIX and is a DEX source build, not an app release: never run a
+    # release for it.
+    - if: "$DEX_PREFIX"
+      when: never
     - if: '$CI_COMMIT_BRANCH == "main"'
 
 release_staging:
   extends: .release
+  resource_group: app_release_staging
+  environment:
+    name: app_release_staging
   variables:
     ENV: staging
     R2_BUCKET: $R2_BUCKET_STAGING
   rules:
+    - if: "$DEX_PREFIX"
+      when: never
     - if: '$CI_COMMIT_BRANCH == "staging"'
 
 release_qa:
   extends: .release
+  resource_group: app_release_qa
+  environment:
+    name: app_release_qa
   variables:
     ENV: qa
     R2_BUCKET: $R2_BUCKET_QA
   rules:
+    - if: "$DEX_PREFIX"
+      when: never
     - if: '$CI_COMMIT_BRANCH == "qa"'
