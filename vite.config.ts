@@ -5,6 +5,7 @@ import { defineConfig, Plugin } from "vite";
 import { cjsInterop } from "vite-plugin-cjs-interop";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { sharedRuntimePlugin } from "./scripts/shared-runtime-plugin";
 
 function loadConfigTitle(): string {
   try {
@@ -52,6 +53,10 @@ export default defineConfig(() => {
       react(),
       tsconfigPaths(),
       htmlTitlePlugin(),
+      // Runtime plugin host (Option B): emits the shared re-export entries and
+      // bakes the import map into index.html so dynamically loaded plugins
+      // share the app's React/SDK instances.
+      sharedRuntimePlugin(),
       cjsInterop({
         dependencies: ["bs58", "@coral-xyz/anchor", "lodash"],
       }),
