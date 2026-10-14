@@ -46,10 +46,11 @@ variables:
       ASSET_PREFIX="_assets/${ENV}/${CI_COMMIT_SHORT_SHA}"
       echo "Publishing ${ENV}: ${APP_PREFIX} + ${ASSET_PREFIX} -> ${R2_BUCKET}"
     - yarn install --frozen-lockfile --prefer-offline
-    # PUBLIC_PATH is baked into asset URLs and the plugin import map, so it must
-    # be the versioned prefix — never `/`.
+    # PUBLIC_PATH is the pointer alias, not the version: every shell URL and the
+    # plugin import map then follow _env/<env>.json, so a release needs no shell
+    # rewrites and no Worker redeploy.
     - |
-      PUBLIC_PATH="/${APP_PREFIX}/" yarn build:spa
+      PUBLIC_PATH="/_app/current/" yarn build:spa
       test -f build/client/index.html || { echo "build output missing"; exit 1; }
     - |
       "$RCLONE" copy build/client "r2:${R2_BUCKET}/${APP_PREFIX}" \
@@ -64,7 +65,29 @@ variables:
         fi
       done
     - |
-      printf '{"appBase":"/%s/","assetBase":"/%s/"}\n' "$APP_PREFIX" "$ASSET_PREFIX" > /tmp/pointer.json
+      EXISTING="$("$RCLONE" cat "r2:${R2_BUCKET}/_env/${ENV}.json" 2>/dev/null || true)"
+      APP_PREFIX="$APP_PREFIX" ASSET_PREFIX="$ASSET_PREFIX" PREVIOUS="$EXISTING" node -e '
+        let previous = {};
+        try {
+          previous = JSON.parse(process.env.PREVIOUS || "") || {};
+        } catch {
+          previous = {};
+        }
+        const pointer = {
+          appBase: `/${process.env.APP_PREFIX}/`,
+          assetBase: `/${process.env.ASSET_PREFIX}/`,
+        };
+        // Shells cached before this release still ask for their own hashed
+        // assets; the Worker serves those from the previous version.
+        if (previous.appBase && previous.appBase !== pointer.appBase) {
+          pointer.prevAppBase = previous.appBase;
+        }
+        if (previous.assetBase && previous.assetBase !== pointer.assetBase) {
+          pointer.prevAssetBase = previous.assetBase;
+        }
+        process.stdout.write(JSON.stringify(pointer, null, 2) + "\n");
+      ' > /tmp/pointer.json
+      cat /tmp/pointer.json
       "$RCLONE" copyto /tmp/pointer.json "r2:${R2_BUCKET}/_env/${ENV}.json" --s3-no-check-bucket
       echo "Release ${ENV} ${CI_COMMIT_SHORT_SHA} live; rollback by repointing _env/${ENV}.json"
 
