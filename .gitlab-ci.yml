@@ -1,0 +1,93 @@
+# DEX app release pipeline (Cloudflare R2).
+#
+# One build per env branch, published to that environment's bucket:
+#   main    -> prod    (orderly-dex-fleet-prod)
+#   staging -> staging (orderly-dex-fleet-staging)
+#   qa      -> qa      (orderly-dex-fleet-qa)
+#
+# Publishing writes three things:
+#   _app/<env>/<sha>/...     the built SPA (DEX shells reference /_app/current/…)
+#   _assets/<env>/<sha>/...  hot assets (fonts, tradingview, locales) that may
+#                            change without rebuilding the app
+#   _env/<env>.json          pointer {appBase, assetBase} the dex-fleet Worker resolves
+#
+# A release or rollback is therefore one small object write — no Worker deploy,
+# no per-DEX rebuild. Required CI variables: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID,
+# R2_SECRET_ACCESS_KEY.
+
+stages:
+  - release
+
+variables:
+  R2_BUCKET_PROD: orderly-dex-fleet-prod
+  R2_BUCKET_STAGING: orderly-dex-fleet-staging
+  R2_BUCKET_QA: orderly-dex-fleet-qa
+
+.release:
+  stage: release
+  image: node:24
+  before_script:
+    - |
+      apt-get update -qq >/dev/null
+      apt-get install -y -qq unzip curl >/dev/null
+      curl -fsSL https://downloads.rclone.org/rclone-current-linux-amd64.zip -o /tmp/rclone.zip
+      unzip -q /tmp/rclone.zip -d /tmp/rclone
+      export RCLONE="$(ls -d /tmp/rclone/rclone-*/ | head -1)rclone"
+      export RCLONE_CONFIG_R2_TYPE=s3
+      export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+      export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+      export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+      export RCLONE_CONFIG_R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+  script:
+    - |
+      set -e
+      test -n "$R2_BUCKET" || { echo "R2_BUCKET is not set"; exit 1; }
+      APP_PREFIX="_app/${ENV}/${CI_COMMIT_SHORT_SHA}"
+      ASSET_PREFIX="_assets/${ENV}/${CI_COMMIT_SHORT_SHA}"
+      echo "Publishing ${ENV}: ${APP_PREFIX} + ${ASSET_PREFIX} -> ${R2_BUCKET}"
+    - yarn install --frozen-lockfile --prefer-offline
+    # PUBLIC_PATH is baked into asset URLs and the plugin import map, so it must
+    # be the versioned prefix — never `/`.
+    - |
+      PUBLIC_PATH="/${APP_PREFIX}/" yarn build:spa
+      test -f build/client/index.html || { echo "build output missing"; exit 1; }
+    - |
+      "$RCLONE" copy build/client "r2:${R2_BUCKET}/${APP_PREFIX}" \
+        --checksum --transfers 64 --checkers 64 --s3-no-check-bucket
+    # Hot assets only: per-DEX branding/config live outside the overlay so they
+    # can never be shadowed by an environment-wide file.
+    - |
+      for dir in fonts tradingview locales; do
+        if [ -d "public/$dir" ]; then
+          "$RCLONE" copy "public/$dir" "r2:${R2_BUCKET}/${ASSET_PREFIX}/${dir}" \
+            --checksum --transfers 64 --checkers 64 --s3-no-check-bucket
+        fi
+      done
+    - |
+      printf '{"appBase":"/%s/","assetBase":"/%s/"}\n' "$APP_PREFIX" "$ASSET_PREFIX" > /tmp/pointer.json
+      "$RCLONE" copyto /tmp/pointer.json "r2:${R2_BUCKET}/_env/${ENV}.json" --s3-no-check-bucket
+      echo "Release ${ENV} ${CI_COMMIT_SHORT_SHA} live; rollback by repointing _env/${ENV}.json"
+
+release_prod:
+  extends: .release
+  variables:
+    ENV: prod
+    R2_BUCKET: $R2_BUCKET_PROD
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+release_staging:
+  extends: .release
+  variables:
+    ENV: staging
+    R2_BUCKET: $R2_BUCKET_STAGING
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "staging"'
+
+release_qa:
+  extends: .release
+  variables:
+    ENV: qa
+    R2_BUCKET: $R2_BUCKET_QA
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "qa"'
